@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Command, CommandEmpty, CommandInput, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Check, ChevronsUpDown, Loader2, MapPin } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -19,7 +19,7 @@ import { useGoogleMaps } from "@/components/maps/map-provider"
 import { useToast } from "@/components/ui/use-toast"
 import { ToastAction } from "@/components/ui/toast"
 
-// Common tags array
+// Common tags array (keeping all the tags from version 8)
 const commonTags = [
   // Drink Types
   "Coffee",
@@ -86,14 +86,13 @@ const mapContainerStyle = {
 }
 
 const defaultCenter = {
-  lat: 21.0278, // Latitude for Hanoi
-  lng: 105.8342, // Longitude for Hanoi
+  lat: 21.0278,
+  lng: 105.8342,
 }
 
 // Debounce utility function
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeout: NodeJS.Timeout | null = null
-
   return (...args: Parameters<T>) => {
     if (timeout) clearTimeout(timeout)
     timeout = setTimeout(() => func(...args), wait)
@@ -257,19 +256,12 @@ export default function AddLocation() {
         },
       }
 
-      autocompleteServiceRef.current.getPlacePredictions(
-        request,
-        (predictions: google.maps.places.AutocompletePrediction[] | null, status) => {
-          setIsSearching(false)
-          if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
-            setPredictions(predictions)
-          } else {
-            setPredictions([])
-          }
-        },
-      )
+      const results = await autocompleteServiceRef.current.getPlacePredictions(request)
+      setPredictions(results.predictions || [])
+      setIsSearching(false)
     } catch (error) {
       console.error("Error fetching predictions:", error)
+      setPredictions([])
       setIsSearching(false)
     }
   }
@@ -395,41 +387,34 @@ export default function AddLocation() {
               placeholder="Start typing to search for places..."
               className="w-full"
             />
-            {(isSearching || predictions.length > 0) && showSuggestions && (
-              <div className="absolute z-50 w-full mt-1 bg-popover text-popover-foreground shadow-md rounded-md border">
-                <div className="p-2">
+            {showSuggestions && (predictions.length > 0 || isSearching) && (
+              <div className="absolute z-50 w-full mt-1 bg-popover rounded-md border shadow-md">
+                <div className="max-h-[300px] overflow-y-auto p-1">
                   {isSearching ? (
-                    <div className="flex items-center justify-center py-2">
+                    <div className="flex items-center justify-center py-6">
                       <Loader2 className="h-4 w-4 animate-spin" />
                     </div>
-                  ) : predictions.length > 0 ? (
-                    <Command>
-                      <CommandList>
-                        <CommandGroup>
-                          {predictions.map((prediction) => (
-                            <CommandItem
-                              key={prediction.place_id}
-                              onSelect={() => {
-                                getPlaceDetails(prediction.place_id)
-                                setShowSuggestions(false)
-                                setPredictions([])
-                              }}
-                              className="cursor-pointer"
-                            >
-                              <MapPin className="mr-2 h-4 w-4" />
-                              <div className="flex flex-col">
-                                <span className="font-medium">{prediction.structured_formatting.main_text}</span>
-                                <span className="text-sm text-muted-foreground">
-                                  {prediction.structured_formatting.secondary_text}
-                                </span>
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
                   ) : (
-                    <div className="py-2 px-3 text-sm text-muted-foreground">No results found</div>
+                    predictions.map((prediction) => (
+                      <button
+                        key={prediction.place_id}
+                        type="button"
+                        onClick={() => {
+                          getPlaceDetails(prediction.place_id)
+                          setShowSuggestions(false)
+                          setPredictions([])
+                        }}
+                        className="w-full flex items-start gap-2 rounded-sm p-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                      >
+                        <MapPin className="h-4 w-4 mt-1 shrink-0" />
+                        <div className="flex flex-col">
+                          <span className="font-medium">{prediction.structured_formatting.main_text}</span>
+                          <span className="text-sm text-muted-foreground">
+                            {prediction.structured_formatting.secondary_text}
+                          </span>
+                        </div>
+                      </button>
+                    ))
                   )}
                 </div>
               </div>
@@ -509,16 +494,18 @@ export default function AddLocation() {
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-full p-0">
-              <Command>
+            <PopoverContent className="w-full p-0 overflow-hidden">
+              <Command className="w-full">
                 <CommandInput placeholder="Search tags..." />
-                <CommandList>
+                <CommandList className="max-h-[300px] overflow-y-auto">
                   <CommandEmpty>No tag found.</CommandEmpty>
-                  <CommandGroup heading="Drink Types">
+                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Drink Types</div>
+                  <div className="px-1 pb-1.5">
                     {commonTags.slice(0, 9).map((tag) => (
-                      <CommandItem
+                      <button
                         key={tag}
-                        onSelect={() => {
+                        type="button"
+                        onClick={() => {
                           setFormData({
                             ...formData,
                             tags: formData.tags.includes(tag)
@@ -526,19 +513,22 @@ export default function AddLocation() {
                               : [...formData.tags, tag],
                           })
                         }}
+                        className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
                       >
                         <Check
                           className={cn("mr-2 h-4 w-4", formData.tags.includes(tag) ? "opacity-100" : "opacity-0")}
                         />
                         {tag}
-                      </CommandItem>
+                      </button>
                     ))}
-                  </CommandGroup>
-                  <CommandGroup heading="Food">
+                  </div>
+                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Food</div>
+                  <div className="px-1 pb-1.5">
                     {commonTags.slice(9, 16).map((tag) => (
-                      <CommandItem
+                      <button
                         key={tag}
-                        onSelect={() => {
+                        type="button"
+                        onClick={() => {
                           setFormData({
                             ...formData,
                             tags: formData.tags.includes(tag)
@@ -546,19 +536,22 @@ export default function AddLocation() {
                               : [...formData.tags, tag],
                           })
                         }}
+                        className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
                       >
                         <Check
                           className={cn("mr-2 h-4 w-4", formData.tags.includes(tag) ? "opacity-100" : "opacity-0")}
                         />
                         {tag}
-                      </CommandItem>
+                      </button>
                     ))}
-                  </CommandGroup>
-                  <CommandGroup heading="Establishment Type">
+                  </div>
+                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Establishment Type</div>
+                  <div className="px-1 pb-1.5">
                     {commonTags.slice(16, 26).map((tag) => (
-                      <CommandItem
+                      <button
                         key={tag}
-                        onSelect={() => {
+                        type="button"
+                        onClick={() => {
                           setFormData({
                             ...formData,
                             tags: formData.tags.includes(tag)
@@ -566,19 +559,22 @@ export default function AddLocation() {
                               : [...formData.tags, tag],
                           })
                         }}
+                        className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
                       >
                         <Check
                           className={cn("mr-2 h-4 w-4", formData.tags.includes(tag) ? "opacity-100" : "opacity-0")}
                         />
                         {tag}
-                      </CommandItem>
+                      </button>
                     ))}
-                  </CommandGroup>
-                  <CommandGroup heading="Food Types">
+                  </div>
+                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Food Types</div>
+                  <div className="px-1 pb-1.5">
                     {commonTags.slice(26, 31).map((tag) => (
-                      <CommandItem
+                      <button
                         key={tag}
-                        onSelect={() => {
+                        type="button"
+                        onClick={() => {
                           setFormData({
                             ...formData,
                             tags: formData.tags.includes(tag)
@@ -586,19 +582,22 @@ export default function AddLocation() {
                               : [...formData.tags, tag],
                           })
                         }}
+                        className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
                       >
                         <Check
                           className={cn("mr-2 h-4 w-4", formData.tags.includes(tag) ? "opacity-100" : "opacity-0")}
                         />
                         {tag}
-                      </CommandItem>
+                      </button>
                     ))}
-                  </CommandGroup>
-                  <CommandGroup heading="Dietary">
+                  </div>
+                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Dietary</div>
+                  <div className="px-1 pb-1.5">
                     {commonTags.slice(31, 34).map((tag) => (
-                      <CommandItem
+                      <button
                         key={tag}
-                        onSelect={() => {
+                        type="button"
+                        onClick={() => {
                           setFormData({
                             ...formData,
                             tags: formData.tags.includes(tag)
@@ -606,19 +605,22 @@ export default function AddLocation() {
                               : [...formData.tags, tag],
                           })
                         }}
+                        className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
                       >
                         <Check
                           className={cn("mr-2 h-4 w-4", formData.tags.includes(tag) ? "opacity-100" : "opacity-0")}
                         />
                         {tag}
-                      </CommandItem>
+                      </button>
                     ))}
-                  </CommandGroup>
-                  <CommandGroup heading="Amenities">
+                  </div>
+                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Amenities</div>
+                  <div className="px-1 pb-1.5">
                     {commonTags.slice(34, 44).map((tag) => (
-                      <CommandItem
+                      <button
                         key={tag}
-                        onSelect={() => {
+                        type="button"
+                        onClick={() => {
                           setFormData({
                             ...formData,
                             tags: formData.tags.includes(tag)
@@ -626,19 +628,22 @@ export default function AddLocation() {
                               : [...formData.tags, tag],
                           })
                         }}
+                        className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
                       >
                         <Check
                           className={cn("mr-2 h-4 w-4", formData.tags.includes(tag) ? "opacity-100" : "opacity-0")}
                         />
                         {tag}
-                      </CommandItem>
+                      </button>
                     ))}
-                  </CommandGroup>
-                  <CommandGroup heading="Atmosphere">
+                  </div>
+                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Atmosphere</div>
+                  <div className="px-1 pb-1.5">
                     {commonTags.slice(44).map((tag) => (
-                      <CommandItem
+                      <button
                         key={tag}
-                        onSelect={() => {
+                        type="button"
+                        onClick={() => {
                           setFormData({
                             ...formData,
                             tags: formData.tags.includes(tag)
@@ -646,14 +651,15 @@ export default function AddLocation() {
                               : [...formData.tags, tag],
                           })
                         }}
+                        className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
                       >
                         <Check
                           className={cn("mr-2 h-4 w-4", formData.tags.includes(tag) ? "opacity-100" : "opacity-0")}
                         />
                         {tag}
-                      </CommandItem>
+                      </button>
                     ))}
-                  </CommandGroup>
+                  </div>
                 </CommandList>
               </Command>
             </PopoverContent>
