@@ -38,7 +38,6 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${requestUrl.origin}/?error=Invalid callback`)
   } catch (error) {
     console.error("Unhandled auth callback error:", error)
-    const requestUrl = new URL(request.url)
     return NextResponse.redirect(`${requestUrl.origin}/?error=${encodeURIComponent("An unexpected error occurred")}`)
   }
 }
